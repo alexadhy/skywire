@@ -85,25 +85,6 @@ func (c *Config) SetDefaults() {
 	}
 }
 
-// DialOptions describes dial options.
-type DialOptions struct {
-	MinForwardRts int
-	MaxForwardRts int
-	MinConsumeRts int
-	MaxConsumeRts int
-}
-
-// DefaultDialOptions returns default dial options.
-// Used by default if nil is passed as options.
-func DefaultDialOptions() *DialOptions {
-	return &DialOptions{
-		MinForwardRts: 1,
-		MaxForwardRts: 1,
-		MinConsumeRts: 1,
-		MaxConsumeRts: 1,
-	}
-}
-
 // Router is responsible for creating and keeping track of routes.
 // Internally, it uses the routing table, route finder client and setup client.
 type Router interface {
@@ -117,7 +98,7 @@ type Router interface {
 	// - Setup routes via SetupNode (in one call).
 	// - Save to routing.Table and internal RouteGroup map.
 	// - Return RouteGroup if successful.
-	DialRoutes(ctx context.Context, rPK cipher.PubKey, lPort, rPort routing.Port, opts *DialOptions) (net.Conn, error)
+	DialRoutes(ctx context.Context, rPK cipher.PubKey, lPort, rPort routing.Port) (net.Conn, error)
 
 	// AcceptRoutes should block until we receive an AddRules packet from SetupNode
 	// that contains ConsumeRule(s) or ForwardRule(s).
@@ -132,11 +113,11 @@ type Router interface {
 	SetupIsTrusted(cipher.PubKey) bool
 
 	// Routing table related methods
-	RoutesCount() int
-	Rules() []routing.Rule
-	Rule(routing.RouteID) (routing.Rule, error)
-	SaveRule(routing.Rule) error
-	DelRules([]routing.RouteID)
+	RoutesCount() int                           // Count
+	Rules() []routing.Rule                      // Rules
+	Rule(routing.RouteID) (routing.Rule, error) // single rule
+	SaveRule(routing.Rule) error                // save rule
+	DelRules([]routing.RouteID)                 // delete rule
 }
 
 // Router implements visor.PacketRouter. It manages routing table by
@@ -209,7 +190,6 @@ func (r *router) DialRoutes(
 	ctx context.Context,
 	rPK cipher.PubKey,
 	lPort, rPort routing.Port,
-	opts *DialOptions,
 ) (net.Conn, error) {
 
 	if rPK.Null() {
@@ -226,7 +206,7 @@ func (r *router) DialRoutes(
 		return nil, ErrNoTransportFound
 	}
 
-	forwardPath, reversePath, err := r.fetchBestRoutes(lPK, rPK, opts)
+	forwardPath, reversePath, err := r.fetchBestRoutes(lPK, rPK)
 	if err != nil {
 		return nil, fmt.Errorf("route finder: %w", err)
 	}
@@ -268,7 +248,7 @@ func (r *router) DialRoutes(
 	return nrg, nil
 }
 
-// AcceptsRoutes should block until we receive an AddRules packet from SetupNode
+// AcceptRoutes should block until we receive an AddRules packet from SetupNode
 // that contains ConsumeRule(s) or ForwardRule(s).
 // Then the following should happen:
 // - Save to routing.Table and internal RouteGroup map.
@@ -811,12 +791,7 @@ func (r *router) RemoveRouteDescriptor(desc routing.RouteDescriptor) {
 	}
 }
 
-func (r *router) fetchBestRoutes(src, dst cipher.PubKey, opts *DialOptions) (fwd, rev []routing.Hop, err error) {
-	// TODO: use opts
-	if opts == nil {
-		opts = DefaultDialOptions() // nolint
-	}
-
+func (r *router) fetchBestRoutes(src, dst cipher.PubKey) (fwd, rev []routing.Hop, err error) {
 	r.logger.Infof("Requesting new routes from %s to %s", src, dst)
 
 	timer := time.NewTimer(retryDuration)
@@ -856,7 +831,7 @@ func (r *router) SetupIsTrusted(sPK cipher.PubKey) bool {
 	return ok
 }
 
-// Saves `rules` to the routing table.
+// SaveRoutingRules saves `rules` to the routing table.
 func (r *router) SaveRoutingRules(rules ...routing.Rule) error {
 	for _, rule := range rules {
 		if err := r.rt.SaveRule(rule); err != nil {
