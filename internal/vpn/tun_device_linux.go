@@ -1,6 +1,3 @@
-//go:build windows
-// +build windows
-
 package vpn
 
 func (t *tunDevice) Read(buf []byte) (int, error) {
@@ -10,3 +7,4 @@ func (t *tunDevice) Read(buf []byte) (int, error) {
 func (t *tunDevice) Write(buf []byte) (int, error) {
 	return t.tun.Write(buf, 0)
 }
+
