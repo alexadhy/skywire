@@ -609,7 +609,8 @@ func (rg *RouteGroup) handleNetworkProbePacket(packet routing.Packet) error {
 	sentAtMs := binary.BigEndian.Uint64(payload)
 	throughput := binary.BigEndian.Uint64(payload[8:])
 
-	sentAt := time.Unix(int64(sentAtMs/1000), 0)
+	ms := sentAtMs % 1000
+	sentAt := time.Unix(int64(sentAtMs/1000), int64(ms)*int64(time.Millisecond))
 
 	rg.networkStats.SetLatency(time.Since(sentAt))
 	rg.networkStats.SetUploadSpeed(uint32(throughput))
