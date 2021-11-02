@@ -54,6 +54,7 @@ func (t PacketType) String() string {
 // - DataPacket      - Payload is just the underlying data.
 // - ClosePacket     - Payload is a type CloseCode byte.
 // - KeepAlivePacket - Payload is empty.
+// - NetworkProbePacket - Payload contains timestamp and throughput of network conn
 const (
 	DataPacket PacketType = iota
 	ClosePacket

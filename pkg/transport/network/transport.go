@@ -113,12 +113,12 @@ func (c *transport) RemoteAddr() net.Addr {
 	return c.rAddr
 }
 
-// LocalAddr implements net.Conn
+// LocalRawAddr implements net.Conn
 func (c *transport) LocalRawAddr() net.Addr {
 	return c.Conn.LocalAddr()
 }
 
-// RemoteAddr implements net.Conn
+// RemoteRawAddr implements net.Conn
 func (c *transport) RemoteRawAddr() net.Addr {
 	return c.Conn.RemoteAddr()
 }

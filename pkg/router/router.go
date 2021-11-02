@@ -268,7 +268,7 @@ func (r *router) DialRoutes(
 	return nrg, nil
 }
 
-// AcceptsRoutes should block until we receive an AddRules packet from SetupNode
+// AcceptRoutes block until we receive an AddRules packet from SetupNode
 // that contains ConsumeRule(s) or ForwardRule(s).
 // Then the following should happen:
 // - Save to routing.Table and internal RouteGroup map.
@@ -341,7 +341,7 @@ func (r *router) serveTransportManager(ctx context.Context) {
 			return
 		}
 
-		if err := r.handleTransportPacket(ctx, packet); err != nil {
+		if err = r.handleTransportPacket(ctx, packet); err != nil {
 			if err == transport.ErrNotServing {
 				r.logger.WithError(err).Warnf("Stopped serving Transport.")
 				return

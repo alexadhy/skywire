@@ -23,7 +23,8 @@ import (
 )
 
 const (
-	logWriteInterval = time.Second * 3
+	logWriteInterval         = time.Second * 3
+	defaultTransportDeadline = 30 * time.Second
 )
 
 // Records number of managedTransports.
@@ -39,13 +40,12 @@ var (
 
 // ManagedTransportConfig is a configuration for managed transport.
 type ManagedTransportConfig struct {
-	client          network.Client
-	ebc             *appevent.Broadcaster
-	DC              DiscoveryClient
-	LS              LogStore
-	RemotePK        cipher.PubKey
-	TransportLabel  Label
-	InactiveTimeout time.Duration
+	client         network.Client
+	ebc            *appevent.Broadcaster
+	DC             DiscoveryClient
+	LS             LogStore
+	RemotePK       cipher.PubKey
+	TransportLabel Label
 }
 
 // ManagedTransport manages a direct line of communication between two visor nodes.
@@ -69,8 +69,6 @@ type ManagedTransport struct {
 
 	done chan struct{}
 	wg   sync.WaitGroup
-
-	timeout time.Duration
 }
 
 // NewManagedTransport creates a new ManagedTransport.
@@ -86,7 +84,6 @@ func NewManagedTransport(conf ManagedTransportConfig) *ManagedTransport {
 		LogEntry:    new(LogEntry),
 		transportCh: make(chan struct{}, 1),
 		done:        make(chan struct{}),
-		timeout:     conf.InactiveTimeout,
 	}
 	return mt
 }
@@ -117,6 +114,7 @@ func (mt *ManagedTransport) Serve(readCh chan<- routing.Packet) {
 func (mt *ManagedTransport) readLoop(readCh chan<- routing.Packet) {
 	log := mt.log.WithField("src", "read_loop")
 	defer mt.wg.Done()
+
 	for {
 		p, err := mt.readPacket()
 		if err != nil {
@@ -328,6 +326,27 @@ func (mt *ManagedTransport) setTransport(newTransport network.Transport) error {
 		mt.log.Debug("Sent signal to 'mt.transportCh'.")
 	default:
 	}
+
+	go func() {
+		if mt.getTransport() == nil || mt.getTransport().Network() != network.SUDPH {
+			return
+		}
+		tick := time.NewTicker(defaultTransportDeadline)
+		for range tick.C {
+			if mt.IsClosed() {
+				tick.Stop()
+				return
+			}
+			mt.log.Debug("transport health-check")
+			err := mt.queryDiscovery()
+			if err != nil {
+				tick.Stop()
+				mt.close()
+				return
+			}
+		}
+	}()
+
 	return nil
 }
 
@@ -350,12 +369,28 @@ func (mt *ManagedTransport) deleteFromDiscovery() error {
 	})
 }
 
+func (mt *ManagedTransport) queryDiscovery() error {
+	retrier := netutil.NewRetrier(3*time.Second, 3, 2, mt.log)
+	return retrier.Do(func() error {
+		_, err := mt.dc.GetTransportByID(context.Background(), mt.Entry.ID)
+		mt.log.WithField("tp-id", mt.Entry.ID).WithError(err).Debug("Error querying transport")
+		if netErr, ok := err.(net.Error); ok && netErr.Temporary() {
+			mt.log.
+				WithError(err).
+				WithField("temporary", true).
+				Warn("Failed to query transport id.")
+			return err
+		}
+		return err
+	})
+}
+
 /*
 	<<< PACKET MANAGEMENT >>>
 */
 
 // WritePacket writes a packet to the remote.
-func (mt *ManagedTransport) WritePacket(ctx context.Context, packet routing.Packet) error {
+func (mt *ManagedTransport) WritePacket(_ context.Context, packet routing.Packet) error {
 	mt.transportMx.Lock()
 	defer mt.transportMx.Unlock()
 
@@ -368,6 +403,7 @@ func (mt *ManagedTransport) WritePacket(ctx context.Context, packet routing.Pack
 		mt.close()
 		return err
 	}
+
 	if n > routing.PacketHeaderSize {
 		mt.logSent(uint64(n - routing.PacketHeaderSize))
 	}
